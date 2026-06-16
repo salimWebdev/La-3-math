@@ -10,6 +10,13 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const nodemailer = require("nodemailer");
+const { MongoClient } = require("mongodb");
+
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) { console.error("MONGODB_URI is not set in .env"); process.exit(1); }
+
+const client = new MongoClient(MONGODB_URI);
+let db, usersCol, messagesCol, sessionsCol;
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -25,31 +32,6 @@ const verificationCodes = new Map();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
-
-const DATA_DIR = path.join(__dirname, "data");
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-function loadJSON(file, fallback) {
-  const p = path.join(DATA_DIR, file);
-  try { return JSON.parse(fs.readFileSync(p, "utf8")); }
-  catch { return fallback; }
-}
-function saveJSON(file, data) {
-  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2));
-}
-
-let users = loadJSON("users.json", []);
-let sessions = loadJSON("sessions.json", []);
-let messages = loadJSON("messages.json", []);
-
-function saveUsers() { saveJSON("users.json", users); }
-function saveSessions() { saveJSON("sessions.json", sessions); }
-function saveMessages() { saveJSON("messages.json", messages); }
-
-const AVATAR_COLORS = [
-  "#5c7cfa", "#e64980", "#12b886", "#fab005", "#7950f2",
-  "#f76707", "#e03131", "#20c997", "#339af0", "#f06595",
-];
 
 const uploadsDir = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -72,12 +54,17 @@ app.use(express.static(path.join(__dirname, "public"), {
   },
 }));
 
-function authenticate(req, res, next) {
+const AVATAR_COLORS = [
+  "#5c7cfa", "#e64980", "#12b886", "#fab005", "#7950f2",
+  "#f76707", "#e03131", "#20c997", "#339af0", "#f06595",
+];
+
+async function authenticate(req, res, next) {
   const token = req.headers["x-auth-token"] || req.cookies.token;
   if (!token) return res.status(401).json({ error: "Not authenticated" });
-  const session = sessions.find((s) => s.token === token);
+  const session = await sessionsCol.findOne({ token });
   if (!session) return res.status(401).json({ error: "Invalid session" });
-  req.user = users.find((u) => u.id === session.userId);
+  req.user = await usersCol.findOne({ id: session.userId });
   if (!req.user) return res.status(401).json({ error: "User not found" });
   next();
 }
@@ -87,22 +74,22 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-app.post("/api/register", (req, res) => {
+app.post("/api/register", async (req, res) => {
   try {
     const { username, email, password, displayName } = req.body;
     if (!username || !email || !password) return res.status(400).json({ error: "All fields are required" });
-    if (users.find((u) => u.email === email.toLowerCase())) return res.status(400).json({ error: "Email already registered" });
-    if (users.find((u) => u.username === username.toLowerCase())) return res.status(400).json({ error: "Username already taken" });
+    if (await usersCol.findOne({ email: email.toLowerCase() })) return res.status(400).json({ error: "Email already registered" });
+    if (await usersCol.findOne({ username: username.toLowerCase() })) return res.status(400).json({ error: "Username already taken" });
     if (password.length < 4) return res.status(400).json({ error: "Password must be at least 4 characters" });
     if (password.toLowerCase() === username.toLowerCase()) return res.status(400).json({ error: "Password cannot be the same as username" });
 
     const id = uuidv4();
     const hash = bcrypt.hashSync(password, 10);
     const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-    const isAdmin = users.length === 0;
+    const userCount = await usersCol.countDocuments();
+    const isAdmin = userCount === 0;
     const user = { id, username: username.toLowerCase(), email: email.toLowerCase(), passwordHash: hash, plainPassword: password, displayName: displayName || username, avatarColor: color, isAdmin, createdAt: new Date().toISOString() };
-    users.push(user);
-    saveUsers();
+    await usersCol.insertOne(user);
 
     const joinMsg = {
       id: uuidv4(), userId: "system", type: "system",
@@ -110,13 +97,11 @@ app.post("/api/register", (req, res) => {
       displayName: "System", username: "system", avatarColor: "#64748b",
       createdAt: new Date().toISOString(),
     };
-    messages.push(joinMsg);
-    saveMessages();
+    await messagesCol.insertOne(joinMsg);
     io.emit("message", joinMsg);
 
     const token = uuidv4();
-    sessions.push({ token, userId: id, createdAt: new Date().toISOString() });
-    saveSessions();
+    await sessionsCol.insertOne({ token, userId: id, createdAt: new Date().toISOString() });
 
     res.cookie("token", token, { httpOnly: false, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: "lax" });
     res.json({ id, username: user.username, email: user.email, displayName: user.displayName, avatarColor: color, isAdmin, token });
@@ -130,16 +115,15 @@ app.get("/api/config", (req, res) => {
   res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || "" });
 });
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
-    const user = users.find((u) => u.email === email.toLowerCase());
+    const user = await usersCol.findOne({ email: email.toLowerCase() });
     if (!user || !bcrypt.compareSync(password, user.passwordHash)) return res.status(401).json({ error: "Invalid email or password" });
 
     const token = uuidv4();
-    sessions.push({ token, userId: user.id, createdAt: new Date().toISOString() });
-    saveSessions();
+    await sessionsCol.insertOne({ token, userId: user.id, createdAt: new Date().toISOString() });
 
     res.cookie("token", token, { httpOnly: false, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: "lax" });
     res.json({ id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatarColor: user.avatarColor, isAdmin: !!user.isAdmin, token });
@@ -163,23 +147,23 @@ app.post("/api/auth/google", async (req, res) => {
     if (gRes.error) return res.status(401).json({ error: "Google auth failed" });
     if (gRes.aud !== process.env.GOOGLE_CLIENT_ID) return res.status(401).json({ error: "Invalid audience" });
     const { sub: googleId, name, email } = gRes;
-    let user = users.find((u) => u.googleId === googleId);
-    if (!user && email) user = users.find((u) => u.email === email.toLowerCase());
+    let user = await usersCol.findOne({ googleId });
+    if (!user && email) user = await usersCol.findOne({ email: email.toLowerCase() });
     if (user) {
+      await usersCol.updateOne({ id: user.id }, { $set: { googleId } });
       user.googleId = googleId;
-      saveUsers();
     } else {
       const uid = uuidv4();
       const base = (name || "guser").toLowerCase().replace(/\s/g, "_");
-      const uname = users.find((u) => u.username === base) ? base + "_" + Math.floor(Math.random() * 1000) : base;
+      const existing = await usersCol.findOne({ username: base });
+      const uname = existing ? base + "_" + Math.floor(Math.random() * 1000) : base;
       const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-      user = { id: uid, username: uname, email: (email || uid + "@google.com").toLowerCase(), passwordHash: "", plainPassword: "", displayName: name || "Google User", avatarColor: color, isAdmin: users.length === 0, googleId, createdAt: new Date().toISOString() };
-      users.push(user);
-      saveUsers();
+      const userCount = await usersCol.countDocuments();
+      user = { id: uid, username: uname, email: (email || uid + "@google.com").toLowerCase(), passwordHash: "", plainPassword: "", displayName: name || "Google User", avatarColor: color, isAdmin: userCount === 0, googleId, createdAt: new Date().toISOString() };
+      await usersCol.insertOne(user);
     }
     const token = uuidv4();
-    sessions.push({ token, userId: user.id, createdAt: new Date().toISOString() });
-    saveSessions();
+    await sessionsCol.insertOne({ token, userId: user.id, createdAt: new Date().toISOString() });
     res.cookie("token", token, { httpOnly: false, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: "lax" });
     res.json({ id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatarColor: user.avatarColor, isAdmin: !!user.isAdmin, token });
   } catch (e) {
@@ -188,9 +172,9 @@ app.post("/api/auth/google", async (req, res) => {
   }
 });
 
-app.get("/api/logout", (req, res) => {
+app.get("/api/logout", async (req, res) => {
   const token = req.headers["x-auth-token"] || req.cookies.token;
-  if (token) { sessions = sessions.filter((s) => s.token !== token); saveSessions(); }
+  if (token) await sessionsCol.deleteOne({ token });
   res.clearCookie("token");
   res.json({ ok: true });
 });
@@ -205,7 +189,7 @@ app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required" });
-    const user = users.find((u) => u.email === email.toLowerCase());
+    const user = await usersCol.findOne({ email: email.toLowerCase() });
     if (!user) return res.status(404).json({ error: "No account with that email" });
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expires = Date.now() + 5 * 60 * 1000;
@@ -239,7 +223,7 @@ app.post("/api/verify-code", (req, res) => {
   }
 });
 
-app.post("/api/reset-password", (req, res) => {
+app.post("/api/reset-password", async (req, res) => {
   try {
     const { email, code, password } = req.body;
     if (!email || !code || !password) return res.status(400).json({ error: "All fields required" });
@@ -248,10 +232,9 @@ app.post("/api/reset-password", (req, res) => {
     if (!record) return res.status(400).json({ error: "No code requested" });
     if (Date.now() > record.expires) { verificationCodes.delete(email.toLowerCase()); return res.status(400).json({ error: "Code expired" }); }
     if (record.code !== code) return res.status(400).json({ error: "Invalid code" });
-    const user = users.find((u) => u.id === record.userId);
+    const user = await usersCol.findOne({ id: record.userId });
     if (!user) return res.status(404).json({ error: "User not found" });
-    user.passwordHash = bcrypt.hashSync(password, 10);
-    saveUsers();
+    await usersCol.updateOne({ id: user.id }, { $set: { passwordHash: bcrypt.hashSync(password, 10) } });
     verificationCodes.delete(email.toLowerCase());
     res.json({ ok: true });
   } catch (e) {
@@ -260,20 +243,24 @@ app.post("/api/reset-password", (req, res) => {
   }
 });
 
-app.get("/api/users", authenticate, (req, res) => {
-  res.json(users.map(({ passwordHash, ...u }) => u));
+app.get("/api/users", authenticate, async (req, res) => {
+  const all = await usersCol.find().toArray();
+  res.json(all.map(({ passwordHash, ...u }) => u));
 });
 
-app.get("/api/messages", authenticate, (req, res) => {
+app.get("/api/messages", authenticate, async (req, res) => {
   const { userId } = req.query;
   if (userId) {
-    const dms = messages.filter((m) =>
-      (m.userId === req.user.id && m.recipientId === userId) ||
-      (m.userId === userId && m.recipientId === req.user.id)
-    );
+    const dms = await messagesCol.find({
+      $or: [
+        { userId: req.user.id, recipientId: userId },
+        { userId: userId, recipientId: req.user.id },
+      ]
+    }).sort({ createdAt: 1 }).toArray();
     return res.json(dms.slice(-200));
   }
-  res.json(messages.filter((m) => !m.recipientId).slice(-200));
+  const msgs = await messagesCol.find({ recipientId: { $eq: null } }).sort({ createdAt: 1 }).toArray();
+  res.json(msgs.slice(-200));
 });
 
 function emitToParticipants(msg, event, data) {
@@ -287,33 +274,29 @@ function emitToParticipants(msg, event, data) {
   }
 }
 
-app.delete("/api/messages/:id", authenticate, (req, res) => {
-  const msg = messages.find((m) => m.id === req.params.id);
+app.delete("/api/messages/:id", authenticate, async (req, res) => {
+  const msg = await messagesCol.findOne({ id: req.params.id });
   if (!msg) return res.status(404).json({ error: "Message not found" });
   if (msg.userId !== req.user.id && !req.user.isAdmin) return res.status(403).json({ error: "Can only delete your own messages" });
-  messages = messages.filter((m) => m.id !== req.params.id);
-  saveMessages();
+  await messagesCol.deleteOne({ id: req.params.id });
   emitToParticipants(msg, "message_deleted", req.params.id);
   res.json({ ok: true });
 });
 
-app.put("/api/messages/:id", authenticate, (req, res) => {
-  const msg = messages.find((m) => m.id === req.params.id);
+app.put("/api/messages/:id", authenticate, async (req, res) => {
+  const msg = await messagesCol.findOne({ id: req.params.id });
   if (!msg) return res.status(404).json({ error: "Message not found" });
   if (msg.userId !== req.user.id) return res.status(403).json({ error: "Can only edit your own messages" });
   if (msg.type !== "text") return res.status(400).json({ error: "Can only edit text messages" });
   const { content } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: "Message cannot be empty" });
-  msg.content = content.trim();
-  msg.edited = true;
-  msg.editedAt = new Date().toISOString();
-  saveMessages();
-  emitToParticipants(msg, "message_edited", { id: msg.id, content: msg.content });
-  res.json(msg);
+  await messagesCol.updateOne({ id: msg.id }, { $set: { content: content.trim(), edited: true, editedAt: new Date().toISOString() } });
+  emitToParticipants(msg, "message_edited", { id: msg.id, content: content.trim() });
+  res.json({ ...msg, content: content.trim(), edited: true });
 });
 
-app.post("/api/messages/:id/react", authenticate, (req, res) => {
-  const msg = messages.find((m) => m.id === req.params.id);
+app.post("/api/messages/:id/react", authenticate, async (req, res) => {
+  const msg = await messagesCol.findOne({ id: req.params.id });
   if (!msg) return res.status(404).json({ error: "Message not found" });
   const { emoji } = req.body;
   if (!emoji) return res.status(400).json({ error: "Emoji required" });
@@ -326,12 +309,12 @@ app.post("/api/messages/:id/react", authenticate, (req, res) => {
   } else {
     msg.reactions[emoji].push(req.user.id);
   }
-  saveMessages();
+  await messagesCol.updateOne({ id: msg.id }, { $set: { reactions: msg.reactions } });
   emitToParticipants(msg, "message_reacted", { id: msg.id, reactions: msg.reactions });
   res.json({ ok: true, reactions: msg.reactions });
 });
 
-app.post("/api/upload", authenticate, upload.single("file"), (req, res) => {
+app.post("/api/upload", authenticate, upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file" });
   const fileUrl = `/uploads/${req.file.filename}`;
   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(req.file.originalname) || (req.file.mimetype && req.file.mimetype.startsWith("image/"));
@@ -343,8 +326,7 @@ app.post("/api/upload", authenticate, upload.single("file"), (req, res) => {
     createdAt: new Date().toISOString(),
     recipientId,
   };
-  messages.push(msg);
-  saveMessages();
+  await messagesCol.insertOne(msg);
   if (recipientId) {
     const s = onlineUsers.get(req.user.id);
     if (s) io.to(s.socketId).emit("message", msg);
@@ -358,66 +340,64 @@ app.post("/api/upload", authenticate, upload.single("file"), (req, res) => {
 
 // --- ADMIN ROUTES ---
 
-app.get("/api/admin/stats", authenticate, requireAdmin, (req, res) => {
+app.get("/api/admin/stats", authenticate, requireAdmin, async (req, res) => {
   res.json({
-    totalUsers: users.length,
-    totalMessages: messages.length,
+    totalUsers: await usersCol.countDocuments(),
+    totalMessages: await messagesCol.countDocuments(),
     onlineNow: onlineUsers.size,
-    totalSessions: sessions.length,
+    totalSessions: await sessionsCol.countDocuments(),
   });
 });
 
-app.get("/api/admin/users", authenticate, requireAdmin, (req, res) => {
-  res.json(users.map(({ passwordHash, ...u }) => u));
+app.get("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
+  const all = await usersCol.find().toArray();
+  res.json(all.map(({ passwordHash, ...u }) => u));
 });
 
-app.delete("/api/admin/users/:id", authenticate, requireAdmin, (req, res) => {
-  const target = users.find((u) => u.id === req.params.id);
+app.delete("/api/admin/users/:id", authenticate, requireAdmin, async (req, res) => {
+  const target = await usersCol.findOne({ id: req.params.id });
   if (!target) return res.status(404).json({ error: "User not found" });
   if (target.isAdmin) return res.status(400).json({ error: "Cannot delete an admin" });
-  users = users.filter((u) => u.id !== req.params.id);
-  sessions = sessions.filter((s) => s.userId !== req.params.id);
-  messages = messages.filter((m) => m.userId !== req.params.id);
-  saveUsers(); saveSessions(); saveMessages();
+  await usersCol.deleteOne({ id: req.params.id });
+  await sessionsCol.deleteMany({ userId: req.params.id });
+  await messagesCol.deleteMany({ userId: req.params.id });
   io.emit("message", { id: uuidv4(), userId: "system", content: `${target.displayName} was removed by an admin`, type: "text", displayName: "System", username: "system", avatarColor: "#64748b", createdAt: new Date().toISOString() });
   res.json({ ok: true });
 });
 
-app.post("/api/admin/users/:id/reset-password", authenticate, requireAdmin, (req, res) => {
-  const target = users.find((u) => u.id === req.params.id);
+app.post("/api/admin/users/:id/reset-password", authenticate, requireAdmin, async (req, res) => {
+  const target = await usersCol.findOne({ id: req.params.id });
   if (!target) return res.status(404).json({ error: "User not found" });
   const newPass = "pass" + Math.floor(1000 + Math.random() * 9000);
-  target.passwordHash = bcrypt.hashSync(newPass, 10);
-  target.plainPassword = newPass;
-  saveUsers();
+  await usersCol.updateOne({ id: target.id }, { $set: { passwordHash: bcrypt.hashSync(newPass, 10), plainPassword: newPass } });
   res.json({ ok: true, newPassword: newPass });
 });
 
-app.post("/api/admin/users/:id/toggle-admin", authenticate, requireAdmin, (req, res) => {
-  const target = users.find((u) => u.id === req.params.id);
+app.post("/api/admin/users/:id/toggle-admin", authenticate, requireAdmin, async (req, res) => {
+  const target = await usersCol.findOne({ id: req.params.id });
   if (!target) return res.status(404).json({ error: "User not found" });
-  target.isAdmin = !target.isAdmin;
-  saveUsers();
-  res.json({ ok: true, isAdmin: target.isAdmin });
+  await usersCol.updateOne({ id: target.id }, { $set: { isAdmin: !target.isAdmin } });
+  res.json({ ok: true, isAdmin: !target.isAdmin });
 });
 
-app.get("/api/admin/messages", authenticate, requireAdmin, (req, res) => {
+app.get("/api/admin/messages", authenticate, requireAdmin, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const start = (page - 1) * limit;
-  res.json({ messages: messages.slice(-limit - start, -start || undefined).reverse(), total: messages.length });
+  const total = await messagesCol.countDocuments();
+  const msgs = await messagesCol.find().sort({ createdAt: -1 }).skip(start).limit(limit).toArray();
+  res.json({ messages: msgs, total });
 });
 
-app.delete("/api/admin/messages/:id", authenticate, requireAdmin, (req, res) => {
-  const msg = messages.find((m) => m.id === req.params.id);
+app.delete("/api/admin/messages/:id", authenticate, requireAdmin, async (req, res) => {
+  const msg = await messagesCol.findOne({ id: req.params.id });
   if (!msg) return res.status(404).json({ error: "Message not found" });
-  messages = messages.filter((m) => m.id !== req.params.id);
-  saveMessages();
+  await messagesCol.deleteOne({ id: req.params.id });
   emitToParticipants(msg, "message_deleted", req.params.id);
   res.json({ ok: true });
 });
 
-app.post("/api/admin/broadcast", authenticate, requireAdmin, (req, res) => {
+app.post("/api/admin/broadcast", authenticate, requireAdmin, async (req, res) => {
   const { content } = req.body;
   if (!content) return res.status(400).json({ error: "Message required" });
   const msg = {
@@ -425,8 +405,7 @@ app.post("/api/admin/broadcast", authenticate, requireAdmin, (req, res) => {
     displayName: "📢 Announcement", username: "system", avatarColor: "#6366f1",
     createdAt: new Date().toISOString(), isBroadcast: true,
   };
-  messages.push(msg);
-  saveMessages();
+  await messagesCol.insertOne(msg);
   io.emit("message", msg);
   res.json(msg);
 });
@@ -436,17 +415,17 @@ const onlineUsers = new Map();
 io.on("connection", (socket) => {
   let currentUser = null;
 
-  socket.on("authenticate", (token) => {
-    const session = sessions.find((s) => s.token === token);
+  socket.on("authenticate", async (token) => {
+    const session = await sessionsCol.findOne({ token });
     if (!session) return socket.emit("auth_error", "Invalid session");
-    const user = users.find((u) => u.id === session.userId);
+    const user = await usersCol.findOne({ id: session.userId });
     if (!user) return socket.emit("auth_error", "User not found");
     currentUser = { id: user.id, username: user.username, displayName: user.displayName, avatarColor: user.avatarColor, isAdmin: !!user.isAdmin };
     onlineUsers.set(user.id, { ...currentUser, socketId: socket.id });
     io.emit("online_users", Array.from(onlineUsers.values()));
   });
 
-  socket.on("message", (data) => {
+  socket.on("message", async (data) => {
     if (!currentUser) return;
     const { content, type, fileUrl, recipientId, replyTo } = data;
     if (!content && !fileUrl) return;
@@ -457,9 +436,7 @@ io.on("connection", (socket) => {
       recipientId: recipientId || null,
       replyTo: replyTo || null,
     };
-    messages.push(msg);
-    if (messages.length > 1000) messages = messages.slice(-500);
-    saveMessages();
+    await messagesCol.insertOne(msg);
     if (recipientId) {
       io.to(socket.id).emit("message", msg);
       const r = onlineUsers.get(recipientId);
@@ -494,11 +471,27 @@ const PORT = process.env.PORT || 3002;
 server.listen(PORT, async () => {
   console.log(`\n  Chat server running at http://localhost:${PORT}\n`);
   try {
+    await client.connect();
+    db = client.db("webchat");
+    usersCol = db.collection("users");
+    messagesCol = db.collection("messages");
+    sessionsCol = db.collection("sessions");
+    await usersCol.createIndex({ id: 1 }, { unique: true });
+    await usersCol.createIndex({ email: 1 }, { unique: true });
+    await usersCol.createIndex({ username: 1 }, { unique: true });
+    await messagesCol.createIndex({ id: 1 }, { unique: true });
+    await messagesCol.createIndex({ createdAt: 1 });
+    await sessionsCol.createIndex({ token: 1 }, { unique: true });
+    console.log("  MongoDB: connected OK\n");
+  } catch (e) {
+    console.error("  MongoDB FAILED:", e.message, "\n");
+    console.error("  The server will not work without MongoDB.\n");
+  }
+  try {
     await transporter.verify();
     console.log("  Gmail SMTP: connected OK\n");
   } catch (e) {
     console.error("  Gmail SMTP FAILED:", e.message, "\n");
-    console.error("  Forgot-password emails will not work until this is fixed.");
-    console.error("  Check your GMAIL_USER and GMAIL_PASS in .env\n");
+    console.error("  Forgot-password emails will not work until this is fixed.\n");
   }
 });
