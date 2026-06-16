@@ -95,6 +95,11 @@
     @keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
     .theme-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:16px;transition:all .2s;flex-shrink:0}
     .theme-btn:hover{background:var(--hover);border-color:#6366f1;color:#6366f1}
+    #chat-screen{height:100vh;height:100dvh;height:var(--vh,100dvh);display:flex;flex-direction:column;overflow:hidden}
+    #chat-screen>.flex.h-full{flex:1;min-height:0}
+    #chat-screen .flex-1.flex.flex-col.h-full.min-w-0{display:flex;flex-direction:column;min-height:0}
+    #messages{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+    #chat-screen>div:last-child{flex-shrink:0}
     @media(max-width:768px){
       #sidebar{width:280px!important;position:fixed;z-index:30;height:100%;top:0;left:0;transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
       #sidebar.open{transform:translateX(0)}
@@ -125,14 +130,14 @@
     }
     @media(max-width:480px){
       #sidebar{width:100%!important;max-width:300px}
-      html,body{overflow-x:hidden;width:100%;position:relative}
-      #chat-screen{overflow-x:hidden;width:100%}
+      html,body{overflow-x:hidden;width:100%;position:relative;height:100%}
+      #chat-screen{overflow:hidden!important;width:100%;height:100vh;height:100dvh}
       [data-msg-id] img{max-width:100%!important}
       [data-msg-id] audio{max-width:100%!important;min-width:0!important}
       .emoji-picker button{width:30px;height:30px;font-size:18px}
       #messages .msg-group>div{max-width:92%!important}
       #messages{padding:8px 6px!important}
-      #msg-input{padding:8px 12px!important;border-radius:10px!important}
+      #msg-input{padding:8px 12px!important;border-radius:10px!important;font-size:16px!important}
       #chat-screen .px-5{padding-left:10px!important;padding-right:10px!important}
       #chat-screen .px-4{padding-left:8px!important;padding-right:8px!important}
       .msg-actions-bar{padding:2px 3px;white-space:nowrap}
@@ -248,6 +253,10 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Admin Panel
       </a>
+      <button onclick="inviteFriend()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 text-sm font-medium hover:bg-emerald-100 hover:border-emerald-300 transition active:scale-[0.98]">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+        Invite Friend
+      </button>
       <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-500 text-sm font-medium hover:bg-red-100 hover:border-red-300 transition active:scale-[0.98]">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
         Sign Out
@@ -689,6 +698,22 @@ function closeSidebar(){if(isMobile()){document.getElementById('sidebar').classL
 function initSidebar(){if(isMobile()){document.getElementById('sidebar').classList.remove('open')}else{document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-overlay').classList.add('hidden')}}
 window.addEventListener('resize',initSidebar);
 initSidebar();
+
+function inviteFriend(){
+  const url=window.location.origin;
+  if(navigator.share){navigator.share({title:'Join La 3 Math',text:'Join me on La 3 Math chat!',url:url}).catch(()=>{})}
+  else if(navigator.clipboard){navigator.clipboard.writeText(url).then(()=>{const b=document.querySelector('[onclick="inviteFriend()"]');const orig=b.innerHTML;b.innerHTML='<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Link copied!';setTimeout(()=>b.innerHTML=orig,2000)}).catch(()=>{})}
+  else{prompt('Share this link:',url)}
+}
+
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize',()=>{
+    const vh=window.visualViewport.height;
+    document.documentElement.style.setProperty('--vh',vh+'px');
+    const cs=document.getElementById('chat-screen');
+    if(cs)cs.style.height=vh+'px';
+  });
+}
 
 document.addEventListener('click',(e)=>{if(!e.target.closest('.reaction-picker')&&!e.target.closest('.react-btn')){document.querySelectorAll('.reaction-picker.open').forEach(p=>p.classList.remove('open'))}});
 
