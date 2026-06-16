@@ -93,10 +93,72 @@
     .theme-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:16px;transition:all .2s;flex-shrink:0}
     .theme-btn:hover{background:var(--hover);border-color:#6366f1;color:#6366f1}
     @media(max-width:768px){
-      #sidebar{width:280px!important;position:fixed;z-index:30;height:100%;top:0;left:0;transform:translateX(-100%);transition:transform .25s ease}
+      #sidebar{width:280px!important;position:fixed;z-index:30;height:100%;top:0;left:0;transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
       #sidebar.open{transform:translateX(0)}
       .msg-actions-bar{padding:2px}
       .msg-actions-bar button{width:28px;height:28px}
+      .msg-group .msg-actions-bar.outgoing{right:calc(100% + 4px)}
+      .msg-group .msg-actions-bar.incoming{left:calc(100% + 4px)}
+      .emoji-picker{width:calc(100vw - 32px)!important;left:0!important}
+      #messages .msg-group>div{max-width:85%!important}
+      .input-field{font-size:16px!important}
+      #messages{padding:12px 10px!important}
+      .replying-msg{font-size:11px}
+      .glass-card{padding:16px!important}
+      .msg-bubble{padding:10px 14px!important}
+      .msg-bubble .msg-text{font-size:14px!important;line-height:1.6!important}
+      #chat-title{font-size:13px}
+      #header-count{font-size:10px}
+      #users-list .sidebar-item{padding:10px 10px}
+      #my-name{font-size:13px}
+      .stat-card{padding:12px}
+      .stat-card p.text-2xl{font-size:1.4rem}
+      #msg-input{font-size:16px!important}
+      [data-msg-id] .replying-msg{padding:6px 10px}
+      [data-msg-id] .replying-msg span{font-size:10px}
+      #rec-bar .flex{gap:6px;flex-wrap:wrap}
+      #rec-bar .flex>span{font-size:13px}
+      #rec-bar button{font-size:11px;padding:6px 10px}
+    }
+    @media(max-width:480px){
+      #sidebar{width:100%!important;max-width:300px}
+      .emoji-picker button{width:30px;height:30px;font-size:18px}
+      #messages .msg-group>div{max-width:92%!important}
+      #messages{padding:8px 6px!important}
+      #msg-input{padding:8px 12px!important;border-radius:10px!important}
+      #chat-screen .px-5{padding-left:10px!important;padding-right:10px!important}
+      #chat-screen .px-4{padding-left:8px!important;padding-right:8px!important}
+      .msg-actions-bar{padding:2px 3px;white-space:nowrap}
+      .msg-actions-bar button{width:24px;height:24px;font-size:14px}
+      .msg-actions-bar .action-icon{width:24px;height:24px}
+      .msg-actions-bar .divider{margin:2px 1px}
+      #my-avatar{width:34px;height:34px;font-size:12px}
+      .theme-btn{width:30px;height:30px;font-size:14px}
+      #chat-screen .h-14{height:48px!important;padding:0 8px!important}
+      .h-14 .w-8.h-8{width:28px;height:28px;font-size:14px}
+      .reply-bar{padding:4px 8px;font-size:11px}
+      .reply-bar .r-close{width:18px;height:18px;font-size:10px}
+      .replying-msg{padding:5px 8px;gap:4px}
+      .replying-msg span{font-size:9px!important}
+      #chat-screen [id^=forgot-]{padding:12px}
+      #confirm-overlay .bg-white{padding:16px!important}
+      #confirm-overlay button{font-size:12px;padding:8px}
+      .reaction-chip{font-size:10px;padding:1px 5px}
+      .reactions-row{gap:2px}
+      .date-sep{font-size:10px;margin:12px 0 8px}
+      #rec-bar .px-5{padding-left:8px!important;padding-right:8px!important}
+      #rec-bar .flex{gap:4px}
+      #rec-bar button{font-size:10px;padding:4px 8px}
+      .emoji-picker{padding:6px;max-height:160px}
+      .emoji-picker button{width:26px;height:26px;font-size:16px;border-radius:6px}
+      #voice-btn,#emoji-picker+button,#msg-input+button{padding:8px!important}
+      #voice-btn svg,#emoji-picker+button svg,#msg-input+button svg{width:18px;height:18px}
+      label[title="Send image"]{padding:8px!important}
+      label[title="Send image"] svg{width:18px;height:18px}
+    }
+    @media(min-width:769px) and (max-width:1024px){
+      #messages .msg-group>div{max-width:70%!important}
+      #sidebar{width:240px!important}
     }
     @media(min-width:769px){#sidebar{transition:none}}
   </style>
