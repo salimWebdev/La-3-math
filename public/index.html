@@ -25,7 +25,10 @@
     :root{--bg:#f0f4ff;--bg2:#ffffff;--text:#1e293b;--text2:#475569;--text3:#94a3b8;--border:#e2e8f0;--border2:#cbd5e1;--card:#ffffff;--sidebar:#ffffff;--input:#ffffff;--hover:rgba(99,102,241,.06);--shadow:rgba(0,0,0,.04);--glass:rgba(255,255,255,.8);--glass-card:rgba(255,255,255,.92);--grid:rgba(99,102,241,.06);--reaction-bg:rgba(255,255,255,.92);--reaction-border:#e2e8f0;--msg-in:#ffffff;--msg-in-border:#e2e8f0;--scrollbar:rgba(99,102,241,.2);--red-bg:#fee2e2;--red-border:#fecaca;--red-text:#dc2626;--indigo-bg:#eef2ff;--indigo-border:#c7d2fe;--indigo-text:#4f46e5;--emerald-bg:#d1fae5;--emerald-border:#a7f3d0;--emerald-text:#059669;--bubble-in-shadow:0 1px 3px rgba(0,0,0,.04);--bubble-out-shadow:0 2px 8px rgba(99,102,241,.3);--actions-bg:#fff;--actions-border:#e2e8f0;--actions-shadow:0 8px 30px rgba(0,0,0,.12)}
     [data-theme=dark]{--bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--border:#334155;--border2:#475569;--card:#1e293b;--sidebar:#1e293b;--input:#0f172a;--hover:rgba(99,102,241,.15);--shadow:rgba(0,0,0,.2);--glass:rgba(30,41,59,.85);--glass-card:rgba(30,41,59,.92);--grid:rgba(99,102,241,.1);--reaction-bg:rgba(30,41,59,.92);--reaction-border:#334155;--msg-in:#334155;--msg-in-border:#475569;--scrollbar:rgba(99,102,241,.3);--red-bg:#7f1d1d;--red-border:#991b1b;--red-text:#fca5a5;--indigo-bg:#312e81;--indigo-border:#4338ca;--indigo-text:#a5b4fc;--emerald-bg:#064e3b;--emerald-border:#065f46;--emerald-text:#6ee7b7;--bubble-in-shadow:0 1px 3px rgba(0,0,0,.2);--bubble-out-shadow:0 2px 8px rgba(99,102,241,.4);--actions-bg:#1e293b;--actions-border:#334155;--actions-shadow:0 8px 30px rgba(0,0,0,.3)}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);overflow:hidden;background:var(--bg);transition:background .3s,color .3s}
+    html{overflow-x:hidden;width:100%}
+    body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);overflow-x:hidden;overflow-y:hidden;width:100%;max-width:100vw;background:var(--bg);transition:background .3s,color .3s}
+    img,audio,video,canvas{max-width:100%;height:auto}
+    .msg-out audio{filter:invert(1) hue-rotate(180deg)}
     .grid-bg{background-color:var(--bg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:24px 24px;transition:background-color .3s}
     .msg-in{background:var(--msg-in);border:1px solid var(--msg-in-border);border-radius:18px 18px 18px 4px;box-shadow:var(--bubble-in-shadow);transition:background .3s,border .3s,box-shadow .2s}
     .msg-out{background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:18px 18px 4px 18px;box-shadow:var(--bubble-out-shadow);transition:box-shadow .2s}
@@ -122,6 +125,10 @@
     }
     @media(max-width:480px){
       #sidebar{width:100%!important;max-width:300px}
+      html,body{overflow-x:hidden;width:100%;position:relative}
+      #chat-screen{overflow-x:hidden;width:100%}
+      [data-msg-id] img{max-width:100%!important}
+      [data-msg-id] audio{max-width:100%!important;min-width:0!important}
       .emoji-picker button{width:30px;height:30px;font-size:18px}
       #messages .msg-group>div{max-width:92%!important}
       #messages{padding:8px 6px!important}
@@ -208,6 +215,9 @@
         <input id="forgot-newpass" type="password" placeholder="New password (min 4 chars)" class="input-field w-full">
         <button onclick="resetPasswordFinal()" class="btn-primary">Reset Password</button>
       </div>
+    </div>
+    <div class="mt-5 text-center">
+      <span class="inline-block px-4 py-2 rounded-xl text-xs font-semibold tracking-wide shadow-md" style="background:linear-gradient(135deg,#6366f1,#ec4899);color:#fff">Created by Salim Bouchakour</span>
     </div>
   </div>
 </div>
@@ -330,8 +340,8 @@
         </button>
       </div>
     </div>
+    </div>
   </div>
-</div>
 </div>
 
 <script>
@@ -491,7 +501,7 @@ function appendMsg(msg,animate){
   let body='';
   if(msg.replyTo)body+=`<div class="replying-msg slide-up"><div style="min-width:0;flex:1"><span class="font-semibold text-indigo-500">${esc(msg.replyTo.username)}</span><br><span style="color:var(--text2);font-size:11px">${esc(msg.replyTo.content.length>80?msg.replyTo.content.slice(0,80)+'…':msg.replyTo.content)}</span></div></div>`;
   if(msg.type==='image'&&msg.fileUrl)body+=`<img src="${msg.fileUrl}" class="rounded-xl max-w-[280px] max-h-60 object-cover cursor-pointer hover:opacity-90 transition" loading="lazy">`;
-  else if(msg.type==='voice'&&msg.fileUrl)body+=`<div class="mb-1"><audio src="${msg.fileUrl}" controls class="h-10 min-w-[200px]" style="filter:invert(0.18) hue-rotate(180deg)"></audio></div>`;
+  else if(msg.type==='voice'&&msg.fileUrl)body+=`<div class="mb-1"><audio src="${msg.fileUrl}" controls class="h-10 w-full max-w-[240px]" style="filter:${isOwn?'invert(1) hue-rotate(180deg)':'invert(0.18) hue-rotate(180deg)'}"></audio></div>`;
   if(msg.content)body+=`<p class="msg-text text-[15px] leading-7 whitespace-pre-wrap break-words">${esc(msg.content)}</p>`;
   const editedBadge=msg.edited?`<span class="edited-badge text-[10px] ml-1 opacity-60">(edited)</span>`:'';
   const side=isOwn?'outgoing':'incoming';
