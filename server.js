@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -361,7 +362,7 @@ app.delete("/api/admin/users/:id", authenticate, requireAdmin, async (req, res) 
   await usersCol.deleteOne({ id: req.params.id });
   await sessionsCol.deleteMany({ userId: req.params.id });
   await messagesCol.deleteMany({ userId: req.params.id });
-  io.emit("message", { id: uuidv4(), userId: "system", content: `${target.displayName} was removed by an admin`, type: "text", displayName: "System", username: "system", avatarColor: "#64748b", createdAt: new Date().toISOString() });
+  io.emit("message", { id: uuidv4(), userId: "system", content: `${target.displayName} was removed by an admin`, type: "system", displayName: "System", username: "system", avatarColor: "#64748b", createdAt: new Date().toISOString() });
   res.json({ ok: true });
 });
 
